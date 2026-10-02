@@ -1,0 +1,68 @@
+<?php
+/** Site-aware Fail2ban monitor with per-client unban. */
+if (!defined('FREEPBX_IS_AUTH')) { die('No direct script access allowed'); }
+$sites = array_values(array_filter($ucm->getSites(), static fn(array $site): bool => !empty($site['enabled']) || !empty($site['is_local'])));
+$localId = $ucm->localSiteId();
+?>
+<div class="ucm-container" id="ucm-f2b-app">
+  <div class="ucm-page-intro">
+    <div><h2><?php echo _('Fail2ban'); ?></h2><p><?php echo _('View blocked clients and unban an individual IP from its jail.'); ?></p></div>
+    <div class="form-inline"><label for="ucm-f2b-site"><?php echo _('PBX site'); ?></label> <select id="ucm-f2b-site" class="form-control">
+      <?php foreach ($sites as $site): ?><option value="<?php echo (int)$site['id']; ?>" <?php echo (int)$site['id']===$localId?'selected':''; ?>><?php echo htmlspecialchars((string)$site['name']); ?><?php echo !empty($site['is_local'])?' — '._('Local'):''; ?></option><?php endforeach; ?>
+    </select> <button type="button" class="btn btn-default" id="ucm-f2b-refresh"><i class="fa fa-refresh"></i> <?php echo _('Refresh'); ?></button></div>
+  </div>
+  <p class="text-muted"><?php echo _('Read-only monitoring, with confirmed per-client Unban. Jail configuration and service controls are not available here.'); ?></p>
+  <section class="ucm-card"><details id="ucm-f2b-enrollment-details"><summary><?php echo _('Access and recovery'); ?>: <span id="ucm-f2b-enrollment" class="label label-default"><?php echo _('Checking'); ?></span></summary><p><?php echo _('No separate Fail2ban login is created. The FreePBX asterisk account may call only the root-owned, argument-free ucmp-fail2ban helper; that helper accepts a small JSON allowlist and cannot edit jails or control the service.'); ?></p><p><?php echo _('The module cannot stop/restart Fail2ban, ban clients, clear all bans, edit whitelists, or change/create/delete jails.'); ?></p><p><strong><?php echo _('Fresh archive install:'); ?></strong> <?php echo _('run Module Admin from the CLI once as root:'); ?> <code>sudo fwconsole ma install ucmprovisioner</code>. <?php echo _('For a remote site, Sites → Install/update module performs and verifies the same enrollment with the temporary admin credentials.'); ?></p><button type="button" class="btn btn-default btn-sm" id="ucm-f2b-copy-bootstrap" data-command="sudo fwconsole ma install ucmprovisioner"><i class="fa fa-copy"></i> <?php echo _('Copy recovery command'); ?></button></details></section>
+  <div id="ucm-f2b-feedback" class="alert alert-info ucm-f2b-feedback" role="status"><?php echo _('Loading the local PBX…'); ?></div>
+
+  <section class="ucm-card">
+    <div class="ucm-card-heading"><div><h3><?php echo _('Selected PBX'); ?>: <span id="ucm-f2b-site-name"></span></h3><p id="ucm-f2b-service-detail"></p></div></div>
+    <div class="row ucm-f2b-summary">
+      <div class="col-sm-3"><div class="well"><span><?php echo _('Service'); ?></span><strong id="ucm-f2b-state">—</strong></div></div>
+      <div class="col-sm-3"><div class="well"><span><?php echo _('Loaded jails'); ?></span><strong id="ucm-f2b-jail-count">—</strong></div></div>
+      <div class="col-sm-3"><div class="well"><span><?php echo _('Currently banned'); ?></span><strong id="ucm-f2b-ban-count">—</strong></div></div>
+      <div class="col-sm-3"><div class="well"><span><?php echo _('Failures in active windows'); ?></span><strong id="ucm-f2b-fail-count">—</strong></div></div>
+    </div>
+  </section>
+
+  <section class="ucm-card">
+    <div class="ucm-card-heading"><div><h3><?php echo _('Loaded jails'); ?></h3><p><?php echo _('Select a jail to view blocked clients, then use Unban beside the client IP.'); ?></p></div></div>
+    <div class="table-responsive"><table class="table table-striped table-hover" id="ucm-f2b-jails"><thead><tr><th><?php echo _('Jail'); ?></th><th><?php echo _('Protection / filter'); ?></th><th><?php echo _('Failures'); ?></th><th><?php echo _('Banned'); ?></th><th><?php echo _('Threshold'); ?></th><th></th></tr></thead><tbody><tr><td colspan="6" class="text-muted"><?php echo _('Loading…'); ?></td></tr></tbody></table></div>
+  </section>
+
+  <section class="ucm-card" id="ucm-f2b-detail" style="display:none">
+    <div class="ucm-card-heading"><div><h3 id="ucm-f2b-detail-name"></h3><p id="ucm-f2b-why"></p></div></div>
+    <div class="row">
+      <div class="col-md-4"><h4><?php echo _('Effective jail policy'); ?></h4><dl id="ucm-f2b-effective" class="ucm-detail-grid"></dl></div>
+      <div class="col-md-8"><h4><?php echo _('Currently banned clients'); ?></h4><div class="table-responsive"><table class="table table-condensed" id="ucm-f2b-banned"><thead><tr><th><?php echo _('Client'); ?></th><th><?php echo _('Ban observed'); ?></th><th><?php echo _('Recent matches'); ?></th><th><?php echo _('Why / evidence'); ?></th><th></th></tr></thead><tbody></tbody></table></div></div>
+    </div>
+    <h4><?php echo _('Recent jail events'); ?></h4><div class="table-responsive"><table class="table table-condensed table-striped" id="ucm-f2b-events"><thead><tr><th><?php echo _('Time'); ?></th><th><?php echo _('Event'); ?></th><th><?php echo _('Client'); ?></th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="ucm-card"><details><summary><strong><?php echo _('Advanced read-only filter tester'); ?></strong></summary><p class="text-muted"><?php echo _('Paste representative log lines to see whether an already-installed Fail2ban filter recognizes them. This does not change the filter or any jail.'); ?></p><form id="ucm-f2b-filter-test"><div class="form-group"><select name="filter" class="form-control"></select></div><div class="form-group"><textarea name="sample" class="form-control" rows="7" placeholder="Paste representative log lines here"></textarea></div><button class="btn btn-default" type="submit"><?php echo _('Run fail2ban-regex'); ?></button></form><pre id="ucm-f2b-filter-output" style="display:none"></pre></details></section>
+</div>
+
+<script>
+(function($){
+  'use strict';
+  var state={overview:null,detail:null,busy:false};
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function site(){return $('#ucm-f2b-site').val();} function siteName(){return $('#ucm-f2b-site option:selected').text();}
+  function feedback(message,ok,working){$('#ucm-f2b-feedback').removeClass('alert-info alert-success alert-danger').addClass(working?'alert-info':(ok?'alert-success':'alert-danger')).html((working?'<i class="fa fa-spinner fa-spin"></i> ':'')+esc(message));}
+  function call(data,message){if(state.busy)return $.Deferred().reject('Another Fail2ban request is still running').promise();state.busy=true;$('#ucm-f2b-app button,#ucm-f2b-app select').prop('disabled',true);feedback(message,true,true);return window.ucmpAjax({data:$.extend({command:'fail2ban',site_id:site()},data)}).then(function(resp){var r=(resp&&resp.result)||{};if(!(resp&&resp.status)||r.ok===false)return $.Deferred().reject(r.message||(resp&&resp.message)||'Request failed');return r;},function(xhr){return $.Deferred().reject((xhr.responseJSON&&xhr.responseJSON.message)||'Request failed');}).always(function(){state.busy=false;$('#ucm-f2b-app button,#ucm-f2b-app select').prop('disabled',false);});}
+  function load(){state.detail=null;$('#ucm-f2b-detail').hide();call({op:'overview'},'Loading Fail2ban from '+siteName()+'…').done(function(r){state.overview=r;renderOverview(r);feedback('Fail2ban status refreshed from '+siteName()+'.',true,false);}).fail(function(m){renderUnavailable(String(m));feedback(m,false,false);});}
+  function renderUnavailable(m){$('#ucm-f2b-enrollment').removeClass('label-default label-success').addClass('label-danger').text('Not verified');$('#ucm-f2b-site-name').text(siteName());$('#ucm-f2b-service-detail').text(m);$('#ucm-f2b-state,#ucm-f2b-jail-count,#ucm-f2b-ban-count,#ucm-f2b-fail-count').text('—');$('#ucm-f2b-jails tbody').html('<tr><td colspan="6" class="text-danger">'+esc(m)+'</td></tr>');}
+  function renderOverview(r){var s=r.service||{},t=r.totals||{};$('#ucm-f2b-enrollment').removeClass('label-default label-danger').addClass('label-success').text(r.enrolled?'Enrolled and verified':'Helper responded');$('#ucm-f2b-site-name').text(siteName());$('#ucm-f2b-state').html(s.active?'<span class="text-success">Active</span>':'<span class="text-danger">'+esc(s.state||'Stopped')+'</span>');$('#ucm-f2b-service-detail').text('Fail2ban '+(s.version||'unknown version')+' · boot state: '+(s.enabled_state||'unknown'));$('#ucm-f2b-jail-count').text(t.jails||0);$('#ucm-f2b-ban-count').text(t.banned||0);$('#ucm-f2b-fail-count').text(t.failed||0);
+    var rows=(r.jails||[]).map(function(j){return '<tr data-jail="'+esc(j.name)+'"><td><strong>'+esc(j.name)+'</strong></td><td><code>'+esc(j.filter||'—')+'</code></td><td>'+esc(j.currently_failed||0)+' <small class="text-muted">/ '+esc(j.total_failed||0)+' total</small></td><td>'+esc(j.currently_banned||0)+' <small class="text-muted">/ '+esc(j.total_banned||0)+' total</small></td><td>'+esc((j.maxretry||'?')+' in '+(j.findtime||'?')+' → '+(j.bantime||'?')+' ban')+'</td><td><button type="button" class="btn btn-xs '+(Number(j.currently_banned)>0?'btn-warning':'btn-default')+' ucm-f2b-open" data-jail="'+esc(j.name)+'">View clients / unban</button></td></tr>';}).join('');$('#ucm-f2b-jails tbody').html(rows||'<tr><td colspan="6" class="text-muted">No jails are currently loaded.</td></tr>');var $f=$('#ucm-f2b-filter-test [name=filter]').empty();(r.filters||[]).forEach(function(v){$f.append($('<option>').val(v).text(v));});}
+  function loadDetail(jail){call({op:'detail',jail:jail},'Inspecting '+jail+' on '+siteName()+'…').done(function(r){state.detail=r;renderDetail(r);feedback('Showing '+jail+' on '+siteName()+'.',true,false);$('html,body').animate({scrollTop:$('#ucm-f2b-detail').offset().top-80},250);}).fail(function(m){feedback(m,false,false);});}
+  function renderDetail(r){var c=r.config||{},s=r.status||{};$('#ucm-f2b-detail').show();$('#ucm-f2b-detail-name').text(r.jail);$('#ucm-f2b-why').text('This jail uses '+(c.filter||r.jail)+' to watch '+((s.logpaths||[]).join(', ')||c.journalmatch||'its configured source')+'. After '+(c.maxretry||'?')+' matches inside '+(c.findtime||'?')+', '+(c.action||'the configured action')+' blocks the client for '+(c.bantime||'?')+'.');
+    var fields=[['Filter',c.filter,'filter'],['Log path(s)',(s.logpaths||[]).join('\n'),'logpath'],['Journal match',c.journalmatch,'journalmatch'],['Action',c.action,'action'],['Backend',c.backend,'backend'],['Threshold',(c.maxretry||'?')+' failures / '+(c.findtime||'?'),'maxretry'],['Ban time',c.bantime,'bantime'],['Effective whitelist',(s.ignoreip||[]).join(' '),'ignoreip']];$('#ucm-f2b-effective').html(fields.filter(function(x){return x[1];}).map(function(x){var src=(r.sources||{})[x[2]]||'';return '<dt>'+esc(x[0])+'</dt><dd><code>'+esc(x[1])+'</code>'+(src?'<br><small class="text-muted">from '+esc(src)+'</small>':'')+'</dd>';}).join(''));
+    var banned=(r.banned||[]).map(function(b){var evidence=(b.evidence||[]).map(function(e){return '<div><code>'+esc(e.log)+'</code><br>'+esc(e.line)+'</div>';}).join('')||'<span class="text-muted">No matching line remains in the bounded recent log window.</span>';return '<tr><td><code>'+esc(b.ip)+'</code></td><td>'+esc(b.banned_at||'Current status only')+'</td><td>'+esc(b.recent_failures||0)+'</td><td><details><summary>Show evidence</summary>'+evidence+'</details></td><td><button class="btn btn-xs btn-success ucm-f2b-unban" data-ip="'+esc(b.ip)+'">Unban</button></td></tr>';}).join('');$('#ucm-f2b-banned tbody').html(banned||'<tr><td colspan="5" class="text-muted">No clients are currently banned in this jail.</td></tr>');
+    var events=(r.events||[]).slice().reverse().map(function(e){var cls=e.event==='Ban'?'label-danger':(e.event==='Unban'?'label-success':'label-default');return '<tr><td>'+esc(e.time)+'</td><td><span class="label '+cls+'">'+esc(e.event)+'</span></td><td><code>'+esc(e.ip)+'</code></td></tr>';}).join('');$('#ucm-f2b-events tbody').html(events||'<tr><td colspan="3" class="text-muted">No recent Found/Ban/Unban event remains in fail2ban.log.</td></tr>');}
+  $('#ucm-f2b-site').on('change',load);$('#ucm-f2b-refresh').on('click',load);$(document).on('click','#ucm-f2b-jails tr[data-jail]',function(){if(!state.busy)loadDetail($(this).data('jail'));});
+  $(document).on('click','.ucm-f2b-unban',function(){if(!state.detail)return;var ip=$(this).data('ip'),jail=state.detail.jail;if(!confirm('Unban '+ip+' from '+jail+' on '+siteName()+'? It may be banned again if failures continue.'))return;call({op:'unban',jail:jail,ip:ip},'Unbanning '+ip+'…').done(function(r){feedback(r.message,true,false);state.detail=r.detail||null;if(r.detail){renderDetail(r.detail);}else{$('#ucm-f2b-detail').hide();}}).fail(function(m){feedback(m,false,false);});});
+  $('#ucm-f2b-filter-test').on('submit',function(e){e.preventDefault();var filter=$(this).find('[name=filter]').val(),sample=$(this).find('[name=sample]').val();call({op:'test_filter',filter:filter,sample:sample},'Testing '+filter+' on '+siteName()+'…').done(function(r){$('#ucm-f2b-filter-output').show().text(r.output||r.message);feedback(r.message,true,false);}).fail(function(m){feedback(m,false,false);});});
+  $('#ucm-f2b-copy-bootstrap').on('click',function(){var value=$(this).data('command');if(navigator.clipboard){navigator.clipboard.writeText(value).then(function(){feedback('Recovery command copied.',true,false);});}else{window.prompt('Copy this command:',value);}});
+  load();
+})(jQuery);
+</script>

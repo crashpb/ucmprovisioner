@@ -1,0 +1,17 @@
+#!/usr/bin/php
+<?php
+/** Root-owned Fail2ban JSON entry point. No command-line arguments are accepted. */
+if ($argc !== 1) { fwrite(STDERR, "Arguments are not accepted\n"); exit(64); }
+$raw = stream_get_contents(STDIN, 65537);
+header_remove();
+try {
+    if (!is_string($raw) || $raw === '' || strlen($raw) > 65536) { throw new InvalidArgumentException('A bounded JSON request is required'); }
+    $request = json_decode($raw, true, 32, JSON_THROW_ON_ERROR);
+    if (!is_array($request)) { throw new InvalidArgumentException('JSON request must be an object'); }
+    require_once '/usr/local/libexec/ucmp-fail2ban-helper.php';
+    $result = (new \FreePBX\modules\Ucmprovisioner\Fail2banHelper())->handle($request);
+    echo json_encode($result, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), "\n";
+} catch (Throwable $e) {
+    echo json_encode(['ok'=>false,'message'=>$e->getMessage()], JSON_UNESCAPED_SLASHES), "\n";
+    exit(1);
+}

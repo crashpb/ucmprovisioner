@@ -1,0 +1,2 @@
+# UCM Provisioner Patch Manager; bounded JSON on stdin and no command-line arguments.
+asterisk ALL=(root) NOPASSWD: /usr/local/sbin/ucmp-patch-manager ""

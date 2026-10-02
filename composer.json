@@ -1,0 +1,25 @@
+{
+    "name": "crashpb/ucmprovisioner",
+    "description": "FreePBX 17 federated provisioner for Cisco (USECALLMANAGER), Grandstream and Yealink phones",
+    "license": "GPL-3.0-or-later",
+    "authors": [
+        {
+            "name": "crashpb"
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "phpseclib/phpseclib": "^3.0.57"
+    },
+    "autoload": {
+        "psr-4": {
+            "FreePBX\\modules\\Ucmprovisioner\\": "lib/"
+        }
+    },
+    "scripts": {
+        "test": "@php tests/run.php"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

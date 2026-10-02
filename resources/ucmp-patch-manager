@@ -1,0 +1,25 @@
+#!/usr/bin/php
+<?php
+/** Root-owned Patch Manager JSON entry point. No command-line arguments. */
+if ($argc !== 1) {
+    fwrite(STDERR, "Arguments are not accepted\n");
+    exit(64);
+}
+$raw = stream_get_contents(STDIN, 16385);
+try {
+    if (!is_string($raw) || $raw === '' || strlen($raw) > 16384) {
+        throw new InvalidArgumentException('A bounded JSON request is required');
+    }
+    $request = json_decode($raw, true, 16, JSON_THROW_ON_ERROR);
+    if (!is_array($request) || array_is_list($request)) {
+        throw new InvalidArgumentException('JSON request must be an object');
+    }
+    require_once '/usr/local/libexec/PatchCatalog.php';
+    require_once '/usr/local/libexec/AsteriskVersionManager.php';
+    require_once '/usr/local/libexec/PatchManagerHelper.php';
+    $result = (new \FreePBX\modules\Ucmprovisioner\PatchManagerHelper())->handle($request);
+    echo json_encode($result, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), "\n";
+} catch (Throwable $e) {
+    echo json_encode(['ok'=>false,'message'=>$e->getMessage()], JSON_UNESCAPED_SLASHES), "\n";
+    exit(1);
+}

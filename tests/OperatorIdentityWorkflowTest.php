@@ -1,0 +1,40 @@
+<?php
+declare(strict_types=1);
+require_once dirname(__DIR__).'/vendor/autoload.php';
+require_once __DIR__.'/IdentityBindingModesTest.php';
+use FreePBX\modules\Ucmprovisioner\OperatorWorkflowService;
+
+OperatorWorkflowService::ensureSchema($db);
+$service=new OperatorWorkflowService($ucm);
+$current=$service->identityEditor(1,'300');
+$review=$service->previewIdentity(['extension_id'=>$current['extension_id'],'revision'=>$current['revision'],'action'=>'binding','binding_mode'=>'manual_shared',
+    'manual_identity'=>['display_name'=>'Shared Support Room','label'=>'SUPPORT']]);
+$expect($review['ok'] && $review['review']['after']['full_name']==='Shared Support Room','Review resolves the actual proposed manual identity');
+$expect($service->identityEditor(1,'300')['resolved']['full_name']==='Shared Service Desk','Preview does not save source state');
+$saved=$service->saveIdentity(['plan_id'=>$review['plan_id'],'plan_hash'=>$review['plan_hash']]);
+$expect($saved['ok'] && $saved['deployed']===false,'Reviewed identity saves without delivery');
+$expect($service->identityEditor(1,'300')['resolved']['short_name']==='SUPPORT','Full and short names remain independently stored');
+$reject(fn()=>$service->saveIdentity(['plan_id'=>$review['plan_id'],'plan_hash'=>$review['plan_hash']]));
+$current=$service->identityEditor(1,'300');
+$choices=array_fill_keys(array_merge(['display_name'],\FreePBX\modules\Ucmprovisioner\LogicalExtensionService::FINAL_FIELDS),['mode'=>'managed']);
+$choices['phone_label']=['mode'=>'preserve','value'=>'Exact preserved label'];
+$adoption=$service->previewIdentity(['extension_id'=>$current['extension_id'],'revision'=>$current['revision'],'action'=>'adoption','choices'=>$choices]);
+$expect($adoption['review']['after']['outputs']['phone_label']==='Exact preserved label','Adoption preview must apply the exact per-field choices');
+$adopted=$service->saveIdentity(['plan_id'=>$adoption['plan_id'],'plan_hash'=>$adoption['plan_hash']]);
+$expect($adopted['ok'] && $service->identityEditor(1,'300')['resolved']['outputs']['phone_label']==='Exact preserved label','Adoption executes the reviewed field decisions');
+$current=$service->identityEditor(1,'300');
+$stale=$service->previewIdentity(['extension_id'=>$current['extension_id'],'revision'=>$current['revision'],'action'=>'binding','binding_mode'=>'manual_shared','manual_identity'=>['display_name'=>'Never save stale','label'=>'stale']]);
+$db->prepare('UPDATE ucmp_extensions SET revision=revision+1 WHERE id=?')->execute([$current['extension_id']]);
+$reject(fn()=>$service->saveIdentity(['plan_id'=>$stale['plan_id'],'plan_hash'=>$stale['plan_hash']]));
+$expect($service->identityEditor(1,'300')['resolved']['full_name']==='Shared Support Room','Concurrent source revision invalidates review instead of retargeting');
+$beforeOverride=$logical->findById($current['extension_id']);
+$logical->saveExtensionOverride($current['extension_id'],'line_label','final','Reviewed line','Fixture edit','fixture-reviewer');
+$afterOverride=$logical->findById($current['extension_id']);
+$expect((int)$afterOverride['revision']===(int)$beforeOverride['revision']+1 && $afterOverride['desired_identity_hash']===null && $afterOverride['applied_identity_hash']===null,'Override save atomically advances review revision and invalidates stale delivery hashes');
+$logical->revertExtensionOverride($current['extension_id'],'line_label','final');
+$expect((int)$logical->findById($current['extension_id'])['revision']===(int)$afterOverride['revision']+1,'Override removal advances revision too');
+$db->beginTransaction();$rollbackRevision=(int)$logical->findById($current['extension_id'])['revision'];
+$logical->saveExtensionOverride($current['extension_id'],'line_label','final','Rollback line','Fixture rollback','fixture-reviewer');
+$db->rollBack();
+$expect((int)$logical->findById($current['extension_id'])['revision']===$rollbackRevision,'Caller-owned transaction rolls back override and revision together');
+echo "Operator source-only review, adoption, immutable save and stale revision fixtures passed\n";

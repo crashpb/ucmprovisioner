@@ -1,0 +1,670 @@
+<module>
+    <rawname>ucmprovisioner</rawname>
+    <repo>unsupported</repo>
+    <name>UCM Provisioner</name>
+    <version>1.1.0rc33</version>
+    <publisher>crashpb</publisher>
+    <license>GPLv3+</license>
+    <licenselink>https://www.gnu.org/licenses/gpl-3.0.txt</licenselink>
+    <type>setup</type>
+    <category>Connectivity</category>
+    <description>
+        Multi-site phone provisioning for Cisco enterprise phones on
+        USECALLMANAGER-patched Asterisk, Cisco legacy SIP phones, Yealink and
+        Grandstream devices. Includes model-aware templates, BLF federation,
+        Active Directory phonebooks, transactional configuration builds, managed
+        TFTP/media/firmware/timezone assets, phone services, patch management,
+        site replication, discovery, operational status and Fail2ban controls.
+    </description>
+    <menuitems>
+        <ucmprovisioner needsenginedb="yes" category="Connectivity">UCM Provisioner</ucmprovisioner>
+    </menuitems>
+    <depends>
+        <phpversion>8.2.0</phpversion>
+        <module>framework ge 17.0.1</module>
+        <module>core ge 17.0.1</module>
+    </depends>
+    <hooks>
+        <framework class="Chown" namespace="FreePBX\Console\Command">
+            <method callingMethod="fwcChownFiles" class="Ucmprovisioner" namespace="FreePBX\modules">chownFreepbx</method>
+        </framework>
+    </hooks>
+    <database>
+        <table name="ucmp_sites">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_key" type="string" length="64" notnull="false"/>
+            <field name="name" type="string" length="64"/>
+            <field name="is_local" type="boolean" default="0"/>
+            <field name="enabled" type="boolean" default="1"/>
+            <field name="pbx_addr" type="string" length="128" notnull="false"/>
+            <field name="pbx_sip_port" type="integer" default="5160"/>
+            <field name="pbx_host" type="string" length="128" notnull="false"/>
+            <field name="pbx_ssh_port" type="integer" default="22"/>
+            <field name="pbx_ssh_user" type="string" length="64" notnull="false"/>
+            <field name="pbx_ssh_secret" type="text" notnull="false"/>
+            <field name="pbx_host_key" type="string" length="160" notnull="false"/>
+            <field name="pbx_agent_user" type="string" length="64" default="ucmp-pbx"/>
+            <field name="pbx_agent_ready" type="boolean" default="0"/>
+            <field name="pbx_bootstrapped_at" type="integer" default="0"/>
+            <field name="pbx_api_enabled" type="boolean" default="0"/>
+            <field name="pbx_api_ready" type="boolean" default="0"/>
+            <field name="pbx_api_scheme" type="string" length="8" default="http"/>
+            <field name="pbx_api_host" type="string" length="128" notnull="false"/>
+            <field name="pbx_api_port" type="integer" default="80"/>
+            <field name="pbx_api_verify_tls" type="boolean" default="1"/>
+            <field name="pbx_api_secret" type="text" notnull="false"/>
+            <field name="pbx_api_last_ok" type="integer" default="0"/>
+            <field name="docker_host" type="string" length="128" notnull="false"/>
+            <field name="docker_ssh_port" type="integer" default="22"/>
+            <field name="docker_ssh_user" type="string" length="64" notnull="false"/>
+            <field name="docker_ssh_secret" type="text" notnull="false"/>
+            <field name="docker_host_key" type="string" length="160" notnull="false"/>
+            <field name="docker_sudo" type="boolean" default="0"/>
+            <field name="tftp_root_path" type="string" length="255" notnull="false"/>
+            <field name="tftp_service_host" type="string" length="128" notnull="false"/>
+            <field name="tftp_container" type="string" length="64" notnull="false"/>
+            <field name="tftp_bind_path" type="string" length="255" notnull="false"/>
+            <field name="docker_bootstrapped_at" type="integer" default="0"/>
+            <field name="tftp_mode" type="string" length="16" default="docker"/>
+            <field name="tftp_pending_mode" type="string" length="16" notnull="false"/>
+            <field name="pbx_tftp_service_host" type="string" length="128" notnull="false"/>
+            <field name="pbx_tftp_root_path" type="string" length="255" default="/tftpboot"/>
+            <field name="pbx_tftp_bind_path" type="string" length="255" default="/srv/tftp/tftpboot"/>
+            <field name="pbx_tftp_daemon" type="string" length="32" default="tftpd-hpa"/>
+            <field name="pbx_tftp_bootstrapped_at" type="integer" default="0"/>
+            <field name="voice_subnets" type="string" length="255" notnull="false"/>
+            <field name="trunk_endpoint_prefix" type="string" length="64" notnull="false"/>
+            <field name="trunk_endpoint" type="string" length="128" notnull="false"/>
+            <field name="remote_trunk_endpoint" type="string" length="128" notnull="false"/>
+            <key name="idx_ucmp_sites_key" type="unique"><column name="site_key"/></key>
+        </table>
+        <table name="ucmp_models">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="vendor" type="string" length="32"/>
+            <field name="model" type="string" length="48"/>
+            <field name="family" type="string" length="16"/>
+            <field name="role" type="string" length="24" default="desk"/>
+            <field name="series_key" type="string" length="64" notnull="false"/>
+            <field name="sip_accounts" type="smallint" default="1"/>
+            <field name="line_appearances" type="smallint" default="1"/>
+            <field name="programmable_keys" type="smallint" default="0"/>
+            <field name="programmable_key_namespace" type="string" length="24" default="linekey"/>
+            <field name="programmable_key_pages" type="smallint" default="1"/>
+            <field name="handsets_max" type="smallint" default="0"/>
+            <field name="simultaneous_calls" type="smallint" default="0"/>
+            <field name="expansion_types" type="text" notnull="false"/>
+            <field name="max_expansion_modules" type="smallint" default="0"/>
+            <field name="keys_per_expansion" type="smallint" default="0"/>
+            <field name="config_profile" type="string" length="64" notnull="false"/>
+            <field name="firmware_profile" type="string" length="64" notnull="false"/>
+            <field name="directory_profile" type="string" length="64" notnull="false"/>
+            <field name="media_profile" type="string" length="64" notnull="false"/>
+            <field name="auth_profile" type="string" length="64" notnull="false"/>
+            <field name="line_keys" type="smallint" default="2"/>
+            <field name="supports_softkeys" type="boolean" default="0"/>
+            <field name="supports_featurepolicy" type="boolean" default="0"/>
+            <field name="kem_support" type="boolean" default="0"/>
+            <field name="default_firmware" type="string" length="64" notnull="false"/>
+            <field name="notes" type="string" length="160" notnull="false"/>
+            <key name="idx_ucmp_models_vendor_model" type="unique"><column name="vendor"/><column name="model"/></key>
+        </table>
+        <table name="ucmp_templates">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="name" type="string" length="64"/>
+            <field name="site_id" type="integer" notnull="false"/>
+            <field name="target_vendor" type="string" length="32" notnull="false"/>
+            <field name="target_family" type="string" length="16" notnull="false"/>
+            <field name="target_series" type="string" length="64" notnull="false"/>
+            <field name="target_role" type="string" length="24" notnull="false"/>
+            <field name="target_model" type="string" length="128" notnull="false"/>
+            <field name="phonebook_key" type="string" length="64" notnull="false"/>
+            <field name="phonebook_filename" type="string" length="128" notnull="false"/>
+            <field name="phonebook_source_site" type="string" length="64" notnull="false"/>
+            <field name="phonebook_source_url" type="text" notnull="false"/>
+            <field name="buttons" type="text" notnull="false"/>
+            <field name="capacity_overrides" type="text" notnull="false"/>
+            <field name="softkeys" type="text" notnull="false"/>
+            <field name="feature_policy" type="text" notnull="false"/>
+            <field name="setting_overrides" type="text" notnull="false"/>
+            <field name="member_blf" type="boolean" default="1"/>
+            <field name="revision" type="integer" default="1"/>
+            <field name="updated" type="integer" default="0"/>
+            <!-- Template-name uniqueness is promoted by ensureSchema() only after
+                 historical duplicate names have been retained and renamed safely. -->
+            <key name="idx_ucmp_templates_site" type="index"><column name="site_id"/></key>
+        </table>
+        <table name="ucmp_default_template_rules">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_id" type="integer"/>
+            <field name="template_id" type="integer"/>
+            <field name="target_key" type="string" length="255"/>
+            <field name="target_vendor" type="string" length="32" notnull="false"/>
+            <field name="target_family" type="string" length="16" notnull="false"/>
+            <field name="target_series" type="string" length="64" notnull="false"/>
+            <field name="target_model" type="string" length="128" notnull="false"/>
+            <field name="target_role" type="string" length="24" notnull="false"/>
+            <field name="enabled" type="boolean" default="1"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="uniq_ucmp_default_template_target" type="unique"><column name="site_id"/><column name="target_key"/></key>
+            <key name="idx_ucmp_default_template_site" type="index"><column name="site_id"/></key>
+            <key name="idx_ucmp_default_template_template" type="index"><column name="template_id"/></key>
+        </table>
+        <table name="ucmp_groups">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="name" type="string" length="64"/>
+            <field name="site_id" type="integer" notnull="false"/>
+            <field name="parent_group_id" type="integer" notnull="false"/>
+            <field name="template_id" type="integer" notnull="false"/>
+            <field name="template_map" type="text" notnull="false"/>
+            <field name="member_exceptions" type="text" notnull="false"/>
+            <field name="member_blf" type="boolean" default="1"/>
+            <field name="revision" type="integer" default="1"/>
+            <field name="extra_targets" type="text" notnull="false"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="idx_ucmp_groups_site" type="index"><column name="site_id"/></key>
+            <key name="idx_ucmp_groups_parent" type="index"><column name="parent_group_id"/></key>
+        </table>
+        <table name="ucmp_extensions">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_id" type="integer"/>
+            <field name="extension" type="string" length="64"/>
+            <field name="ad_source_id" type="integer" notnull="false"/>
+            <field name="ad_object_key" type="string" length="128" notnull="false"/>
+            <field name="ad_source_revision" type="string" length="64" notnull="false"/>
+            <field name="binding_mode" type="string" length="24" default="ad_primary"/>
+            <field name="linked_source_id" type="integer" notnull="false"/>
+            <field name="linked_object_key" type="string" length="128" notnull="false"/>
+            <field name="identity_adoption" type="string" length="24" default="legacy_review"/>
+            <field name="manual_identity_json" type="text" notnull="false"/>
+            <field name="canonical_identity_hash" type="string" length="64" notnull="false"/>
+            <field name="group_id" type="integer" notnull="false"/>
+            <field name="pbx_presence" type="boolean" default="0"/>
+            <field name="pbx_last_confirmed" type="integer" default="0"/>
+            <field name="desired_identity_hash" type="string" length="64" notnull="false"/>
+            <field name="applied_identity_hash" type="string" length="64" notnull="false"/>
+            <field name="apply_status" type="string" length="24" default="unbound"/>
+            <field name="apply_error" type="text" notnull="false"/>
+            <field name="revision" type="integer" default="1"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="uniq_ucmp_extensions_site_ext" type="unique"><column name="site_id"/><column name="extension"/></key>
+            <key name="uniq_ucmp_extensions_ad_object" type="unique"><column name="ad_source_id"/><column name="ad_object_key"/></key>
+            <key name="idx_ucmp_extensions_group" type="index"><column name="group_id"/></key>
+        </table>
+        <table name="ucmp_identity_overrides">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="scope_key" type="string" length="128"/>
+            <field name="scope_type" type="string" length="16"/>
+            <field name="source_id" type="integer" notnull="false"/>
+            <field name="object_key" type="string" length="128" notnull="false"/>
+            <field name="extension_id" type="integer" notnull="false"/>
+            <field name="site_id" type="integer" notnull="false"/>
+            <field name="field_name" type="string" length="48"/>
+            <field name="mode" type="string" length="12"/>
+            <field name="value_json" type="text" length="4294967295"/>
+            <field name="reason" type="string" length="255" notnull="false"/>
+            <field name="source_revision" type="string" length="64" notnull="false"/>
+            <field name="created_by" type="string" length="128"/>
+            <field name="updated_by" type="string" length="128"/>
+            <field name="created" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="uniq_ucmp_identity_override" type="unique"><column name="scope_key"/><column name="field_name"/><column name="mode"/></key>
+            <key name="idx_ucmp_identity_override_extension" type="index"><column name="extension_id"/></key>
+            <key name="idx_ucmp_identity_override_object" type="index"><column name="source_id"/><column name="object_key"/></key>
+            <key name="idx_ucmp_identity_override_site" type="index"><column name="site_id"/></key>
+        </table>
+        <table name="ucmp_phones">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_id" type="integer" notnull="false"/>
+            <field name="extension_id" type="integer" notnull="false"/>
+            <field name="group_id" type="integer" notnull="false"/>
+            <field name="mac" type="string" length="12" notnull="false"/>
+            <field name="vendor" type="string" length="32" notnull="false"/>
+            <field name="model_id" type="integer" notnull="false"/>
+            <field name="family" type="string" length="16" notnull="false"/>
+            <field name="ip" type="string" length="45" notnull="false"/>
+            <field name="extension" type="string" length="20" notnull="false"/>
+            <field name="prev_extension" type="string" length="20" notnull="false"/>
+            <field name="driver" type="string" length="8" default="inherit"/>
+            <field name="transport" type="string" length="8" default="inherit"/>
+            <field name="sip_port" type="integer" default="0"/>
+            <field name="label" type="string" length="32" notnull="false"/>
+            <field name="overrides" type="text" notnull="false"/>
+            <field name="lines_json" type="text" notnull="false"/>
+            <field name="status" type="string" length="24" default="discovered"/>
+            <field name="last_seen" type="integer" default="0"/>
+            <field name="last_command" type="string" length="24" notnull="false"/>
+            <field name="last_command_at" type="integer" default="0"/>
+            <field name="last_applied" type="integer" default="0"/>
+            <field name="applied_driver" type="string" length="8" notnull="false"/>
+            <field name="applied_transport" type="string" length="8" notnull="false"/>
+            <field name="applied_sip_port" type="integer" default="0"/>
+            <field name="config_filename" type="string" length="64" notnull="false"/>
+            <field name="config_mode" type="string" length="16" default="managed"/>
+            <field name="config_override_sha256" type="string" length="64" notnull="false"/>
+            <field name="config_overridden_at" type="integer" default="0"/>
+            <field name="exclude_bulk_rebuild" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="idx_ucmp_phones_mac" type="unique"><column name="site_id"/><column name="mac"/></key>
+            <key name="idx_ucmp_phones_site_ext" type="index"><column name="site_id"/><column name="extension"/></key>
+            <key name="idx_ucmp_phones_extension_id" type="index"><column name="extension_id"/></key>
+        </table>
+        <table name="ucmp_phone_mac_suppressions">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_id" type="integer"/>
+            <field name="mac" type="string" length="12"/>
+            <field name="extension" type="string" length="20" notnull="false"/>
+            <field name="created" type="integer" default="0"/>
+            <key name="uniq_ucmp_phone_mac_suppression" type="unique"><column name="site_id"/><column name="mac"/></key>
+        </table>
+        <table name="ucmp_settings">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_id" type="integer" notnull="false"/>
+            <field name="skey" type="string" length="64"/>
+            <field name="sval" type="text" notnull="false"/>
+            <!-- Runtime reconciliation removes duplicate historical setting rows
+                 before this index is promoted to unique. Keep the pre-hook form
+                 non-unique so an upgrade can reach that repair. -->
+            <key name="idx_ucmp_settings_site_key" type="index"><column name="site_id"/><column name="skey"/></key>
+        </table>
+        <table name="ucmp_phone_services">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_id" type="integer"/>
+            <field name="service_key" type="string" length="48"/>
+            <field name="name" type="string" length="64"/>
+            <field name="service_type" type="string" length="16"/>
+            <field name="enabled" type="boolean" default="1"/>
+            <field name="locked" type="boolean" default="0"/>
+            <field name="menu_order" type="smallint" default="50"/>
+            <field name="settings_json" type="text" notnull="false"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="uniq_ucmp_phone_services_site_key" type="unique"><column name="site_id"/><column name="service_key"/></key>
+            <key name="idx_ucmp_phone_services_site_order" type="index"><column name="site_id"/><column name="menu_order"/></key>
+        </table>
+        <table name="ucmp_operation_log">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="created" type="integer" default="0"/>
+            <field name="site_id" type="integer" notnull="false"/>
+            <field name="level" type="string" length="12" default="info"/>
+            <field name="operation" type="string" length="48"/>
+            <field name="message" type="string" length="255"/>
+            <field name="detail" type="text" notnull="false"/>
+            <key name="idx_ucmp_log_site_created" type="index"><column name="site_id"/><column name="created"/></key>
+        </table>
+        <table name="ucmp_directory_sources">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="source_key" type="string" length="64"/>
+            <field name="domain" type="string" length="255"/>
+            <field name="enabled" type="boolean" default="1"/>
+            <field name="endpoints_json" type="text" length="4294967295" notnull="false"/>
+            <field name="tls_mode" type="string" length="16" default="ldaps"/>
+            <field name="secret_ref" type="string" length="255" notnull="false"/>
+            <field name="base_dn" type="text" notnull="false"/>
+            <field name="filter" type="text" notnull="false"/>
+            <field name="attribute_map_json" type="text" length="4294967295" notnull="false"/>
+            <field name="site_rules_json" type="text" length="4294967295" notnull="false"/>
+            <field name="schedule_minutes" type="integer" default="60"/>
+            <field name="schedule_json" type="text" length="4294967295" notnull="false"/>
+            <field name="last_accepted_revision" type="string" length="64" notnull="false"/>
+            <field name="last_attempt" type="integer" default="0"/>
+            <field name="last_success" type="integer" default="0"/>
+            <field name="last_error" type="text" notnull="false"/>
+            <field name="created" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="uniq_ucmp_directory_source_key" type="unique"><column name="source_key"/></key>
+            <key name="uniq_ucmp_directory_domain" type="unique"><column name="domain"/></key>
+        </table>
+        <table name="ucmp_directory_sync_runs">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="source_id" type="integer"/>
+            <field name="started" type="integer" default="0"/>
+            <field name="finished" type="integer" default="0"/>
+            <field name="status" type="string" length="24" default="running"/>
+            <field name="candidate_revision" type="string" length="64" notnull="false"/>
+            <field name="accepted_revision" type="string" length="64" notnull="false"/>
+            <field name="object_count" type="integer" default="0"/>
+            <field name="added" type="integer" default="0"/>
+            <field name="changed" type="integer" default="0"/>
+            <field name="deleted" type="integer" default="0"/>
+            <field name="error" type="text" notnull="false"/>
+            <key name="idx_ucmp_directory_sync_source_started" type="index"><column name="source_id"/><column name="started"/></key>
+        </table>
+        <table name="ucmp_directory_entries">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="source_key" type="string" length="128"/>
+            <field name="source_id" type="integer" notnull="false"/>
+            <field name="object_key" type="string" length="128" notnull="false"/>
+            <field name="source_revision" type="string" length="64" notnull="false"/>
+            <field name="last_seen_at" type="integer" default="0"/>
+            <field name="display_name" type="string" length="255"/>
+            <field name="label" type="string" length="128"/>
+            <field name="extension" type="string" length="64"/>
+            <field name="department" type="string" length="255" notnull="false"/>
+            <field name="company" type="string" length="255" notnull="false"/>
+            <field name="org_unit" type="string" length="255" notnull="false"/>
+            <field name="mail" type="string" length="255" notnull="false"/>
+            <field name="mobile" type="string" length="64" notnull="false"/>
+            <field name="pager" type="string" length="64" notnull="false"/>
+            <field name="attributes" type="text" length="4294967295" notnull="false"/>
+            <field name="source_dn" type="text" notnull="false"/>
+            <field name="site_id" type="integer" notnull="false"/>
+            <field name="conflicted" type="boolean" default="0"/>
+            <field name="applied_hash" type="string" length="64" notnull="false"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="idx_ucmp_directory_source" type="index"><column name="source_key"/></key>
+            <key name="idx_ucmp_directory_object" type="unique"><column name="source_id"/><column name="object_key"/></key>
+            <key name="idx_ucmp_directory_ext" type="index"><column name="extension"/></key>
+            <key name="idx_ucmp_directory_site" type="index"><column name="site_id"/></key>
+        </table>
+        <table name="ucmp_directory_conflicts">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="source_id" type="integer" notnull="false"/>
+            <field name="conflict_key" type="string" length="64"/>
+            <field name="conflict_type" type="string" length="32"/>
+            <field name="conflict_value" type="string" length="64"/>
+            <field name="candidates" type="text"/>
+            <field name="resolution_key" type="string" length="128" notnull="false"/>
+            <field name="status" type="string" length="24" default="open"/>
+            <field name="notified" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="idx_ucmp_directory_conflict" type="unique"><column name="conflict_key"/></key>
+            <key name="idx_ucmp_directory_conflict_source" type="index"><column name="source_id"/></key>
+        </table>
+        <table name="ucmp_phonebooks">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="book_key" type="string" length="64"/>
+            <field name="name" type="string" length="64"/>
+            <field name="filename" type="string" length="128"/>
+            <field name="title" type="string" length="64"/>
+            <field name="include_mode" type="string" length="16" default="all"/>
+            <field name="rules" type="text" length="4294967295" notnull="false"/>
+            <field name="exclusions" type="text" length="4294967295" notnull="false"/>
+            <field name="manual_entries" type="text" length="4294967295" notnull="false"/>
+            <field name="group_by" type="string" length="24" default="department"/>
+            <field name="hierarchy" type="text" length="4294967295" notnull="false"/>
+            <field name="publish_sites" type="text" length="4294967295" notnull="false"/>
+            <field name="name_format" type="string" length="24" default="display_label"/>
+            <field name="sort_by" type="string" length="24" default="display_name"/>
+            <field name="include_mobile" type="boolean" default="1"/>
+            <field name="cisco_page_size" type="integer" default="32"/>
+            <field name="is_default" type="boolean" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="idx_ucmp_phonebooks_key" type="unique"><column name="book_key"/></key>
+            <key name="idx_ucmp_phonebooks_filename" type="unique"><column name="filename"/></key>
+        </table>
+        <table name="ucmp_firmware_bundles">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_id" type="integer"/>
+            <field name="vendor" type="string" length="32"/>
+            <field name="profile" type="string" length="64"/>
+            <field name="load_name" type="string" length="128"/>
+            <field name="files_json" type="text" length="4294967295" notnull="false"/>
+            <field name="missing_json" type="text" length="4294967295" notnull="false"/>
+            <field name="phone_marker_pending" type="integer" default="0"/>
+            <field name="status" type="string" length="24" default="incomplete"/>
+            <field name="scanned_at" type="integer" default="0"/>
+            <key name="idx_ucmp_firmware_identity" type="unique"><column name="site_id"/><column name="profile"/><column name="load_name"/></key>
+            <key name="idx_ucmp_firmware_site_profile" type="index"><column name="site_id"/><column name="profile"/></key>
+        </table>
+        <table name="ucmp_timezone_bundles">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_id" type="integer"/>
+            <field name="bundle_key" type="string" length="64"/>
+            <field name="served_version" type="string" length="64"/>
+            <field name="iana_version" type="string" length="16" notnull="false"/>
+            <field name="status" type="string" length="16" default="partial"/>
+            <field name="compatibility_json" type="text" length="4294967295"/>
+            <field name="files_json" type="text" length="4294967295"/>
+            <field name="storage_path" type="string" length="255"/>
+            <field name="active" type="boolean" default="0"/>
+            <field name="created" type="integer" default="0"/>
+            <field name="activated_at" type="integer" default="0"/>
+            <key name="uniq_ucmp_timezone_site_bundle" type="unique"><column name="site_id"/><column name="bundle_key"/></key>
+            <key name="idx_ucmp_timezone_site_active" type="index"><column name="site_id"/><column name="active"/></key>
+        </table>
+        <table name="ucmp_assets">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_id" type="integer"/>
+            <field name="asset_key" type="string" length="64"/>
+            <field name="kind" type="string" length="16"/>
+            <field name="content_sha256" type="string" length="64"/>
+            <field name="filename" type="string" length="255"/>
+            <field name="size_bytes" type="integer" default="0"/>
+            <field name="content_type" type="string" length="96" notnull="false"/>
+            <field name="vendor" type="string" length="32" notnull="false"/>
+            <field name="family" type="string" length="32" notnull="false"/>
+            <field name="series_key" type="string" length="64" notnull="false"/>
+            <field name="model" type="string" length="128" notnull="false"/>
+            <field name="role" type="string" length="24" notnull="false"/>
+            <field name="profile" type="string" length="64" notnull="false"/>
+            <field name="asset_version" type="string" length="64" notnull="false"/>
+            <field name="bundle_key" type="string" length="128" notnull="false"/>
+            <field name="bundle_role" type="string" length="32" notnull="false"/>
+            <field name="companions_json" type="text" length="4294967295" notnull="false"/>
+            <field name="state" type="string" length="16" default="current"/>
+            <field name="first_seen" type="integer" default="0"/>
+            <field name="last_seen" type="integer" default="0"/>
+            <field name="observation_revision" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <field name="relative_path" type="text" notnull="false"/>
+            <field name="validation_status" type="string" length="16" default="discovered"/>
+            <field name="provenance" type="string" length="32" default="discovered"/>
+            <field name="manifest_json" type="text" length="4294967295" notnull="false"/>
+            <field name="validated_at" type="integer" default="0"/>
+            <field name="catalog_revision" type="string" length="32" notnull="false"/>
+            <field name="signature_status" type="string" length="16" default="unverified"/>
+            <field name="metadata_json" type="text" length="4294967295" notnull="false"/>
+            <key name="uniq_ucmp_assets_site_key" type="unique"><column name="site_id"/><column name="asset_key"/></key>
+            <key name="idx_ucmp_assets_site_kind_state" type="index"><column name="site_id"/><column name="kind"/><column name="state"/></key>
+            <key name="idx_ucmp_assets_site_bundle" type="index"><column name="site_id"/><column name="bundle_key"/></key>
+        </table>
+        <table name="ucmp_asset_scan_jobs">
+            <field name="site_id" type="integer" primaryKey="true"/>
+            <field name="scan_token" type="string" length="32"/>
+            <field name="state_json" type="text" length="4294967295"/>
+            <field name="started" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <field name="last_error" type="text" notnull="false"/>
+        </table>
+        <table name="ucmp_asset_scan_receipts">
+            <field name="site_id" type="integer" primaryKey="true"/>
+            <field name="completed" type="integer"/>
+            <field name="kinds_json" type="text"/>
+        </table>
+        <table name="ucmp_site_snapshots">
+            <field name="site_id" type="integer"/>
+            <field name="resource_type" type="string" length="128"/>
+            <field name="payload_json" type="text" length="4294967295" notnull="false"/>
+            <field name="payload_hash" type="string" length="64" notnull="false"/>
+            <field name="api_version" type="string" length="32" notnull="false"/>
+            <field name="fetched_at" type="integer" default="0"/>
+            <field name="last_error" type="text" notnull="false"/>
+            <field name="last_error_at" type="integer" default="0"/>
+            <key name="uniq_ucmp_site_snapshot" type="unique"><column name="site_id"/><column name="resource_type"/></key>
+        </table>
+        <table name="ucmp_site_jobs">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="site_id" type="integer"/>
+            <field name="job_type" type="string" length="48"/>
+            <field name="object_key" type="string" length="160"/>
+            <field name="desired_hash" type="string" length="64"/>
+            <field name="payload_ref" type="string" length="255" notnull="false"/>
+            <field name="state" type="string" length="24" default="pending"/>
+            <field name="attempts" type="integer" default="0"/>
+            <field name="next_attempt" type="integer" default="0"/>
+            <field name="created" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <field name="last_error" type="text" notnull="false"/>
+            <key name="uniq_ucmp_site_job_desired" type="unique"><column name="site_id"/><column name="job_type"/><column name="object_key"/><column name="desired_hash"/></key>
+            <key name="idx_ucmp_site_job_ready" type="index"><column name="site_id"/><column name="state"/><column name="next_attempt"/></key>
+        </table>
+        <table name="ucmp_media_replication_jobs">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="name" type="string" length="80"/>
+            <field name="source_site_id" type="integer"/>
+            <field name="enabled" type="boolean" default="1"/>
+            <field name="interval_minutes" type="integer" default="60"/>
+            <field name="schedule_json" type="text" length="4294967295" notnull="false"/>
+            <field name="scopes_json" type="text" length="4294967295"/>
+            <field name="targets_json" type="text" length="4294967295"/>
+            <field name="object_filter_json" type="text" length="4294967295" notnull="false"/>
+            <field name="changed_only" type="boolean" default="1"/>
+            <field name="retry_unreachable" type="boolean" default="1"/>
+            <field name="next_run" type="integer" default="0"/>
+            <field name="last_attempt" type="integer" default="0"/>
+            <field name="last_success" type="integer" default="0"/>
+            <field name="last_status" type="string" length="24" default="never"/>
+            <field name="last_message" type="text" notnull="false"/>
+            <field name="last_result_json" type="text" length="4294967295" notnull="false"/>
+            <field name="created" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="uniq_ucmp_media_replication_name" type="unique"><column name="source_site_id"/><column name="name"/></key>
+            <key name="idx_ucmp_media_replication_due" type="index"><column name="enabled"/><column name="next_run"/></key>
+        </table>
+        <table name="ucmp_firmware_replication_jobs">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="name" type="string" length="80"/>
+            <field name="source_site_id" type="integer"/>
+            <field name="enabled" type="boolean" default="1"/>
+            <field name="interval_minutes" type="integer" default="60"/>
+            <field name="schedule_json" type="text" length="4294967295" notnull="false"/>
+            <field name="packages_json" type="text" length="4294967295"/>
+            <field name="timezone_bundle_key" type="string" length="64" notnull="false"/>
+            <field name="activate_timezone" type="boolean" default="0"/>
+            <field name="include_all_firmware" type="boolean" default="0"/>
+            <field name="include_all_timezones" type="boolean" default="0"/>
+            <field name="include_all_locales" type="boolean" default="0"/>
+            <field name="locale_user_locale" type="string" length="64" notnull="false"/>
+            <field name="locale_network_locale" type="string" length="64" notnull="false"/>
+            <field name="targets_json" type="text" length="4294967295"/>
+            <field name="changed_only" type="boolean" default="1"/>
+            <field name="retry_unreachable" type="boolean" default="1"/>
+            <field name="next_run" type="integer" default="0"/>
+            <field name="last_attempt" type="integer" default="0"/>
+            <field name="last_success" type="integer" default="0"/>
+            <field name="last_status" type="string" length="24" default="never"/>
+            <field name="last_message" type="text" notnull="false"/>
+            <field name="last_result_json" type="text" length="4294967295" notnull="false"/>
+            <field name="created" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="uniq_ucmp_firmware_replication_name" type="unique"><column name="source_site_id"/><column name="name"/></key>
+            <key name="idx_ucmp_firmware_replication_due" type="index"><column name="enabled"/><column name="next_run"/></key>
+        </table>
+        <table name="ucmp_replication_runs">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="run_key" type="string" length="32"/>
+            <field name="kind" type="string" length="32"/>
+            <field name="label" type="string" length="160"/>
+            <field name="source_site_id" type="integer" default="0"/>
+            <field name="targets_json" type="text" length="4294967295" notnull="false"/>
+            <field name="status" type="string" length="24" default="running"/>
+            <field name="total_units" type="integer" default="0"/>
+            <field name="completed_units" type="integer" default="0"/>
+            <field name="current_item" type="string" length="255" notnull="false"/>
+            <field name="message" type="text" notnull="false"/>
+            <field name="context_json" type="text" length="4294967295" notnull="false"/>
+            <field name="result_json" type="text" length="4294967295" notnull="false"/>
+            <field name="created" type="integer" default="0"/>
+            <field name="started" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <field name="finished" type="integer" default="0"/>
+            <key name="uniq_ucmp_replication_run_key" type="unique"><column name="run_key"/></key>
+            <key name="idx_ucmp_replication_runs_status_updated" type="index"><column name="status"/><column name="updated"/></key>
+        </table>
+        <table name="ucmp_configuration_sync_jobs">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="name" type="string" length="80"/>
+            <field name="source_site_id" type="integer"/>
+            <field name="enabled" type="boolean" default="1"/>
+            <field name="interval_minutes" type="integer" default="60"/>
+            <field name="schedule_json" type="text" length="4294967295" notnull="false"/>
+            <field name="scopes_json" type="text" length="4294967295"/>
+            <field name="targets_json" type="text" length="4294967295"/>
+            <field name="object_filter_json" type="text" length="4294967295" notnull="false"/>
+            <field name="soft_lock" type="boolean" default="1"/>
+            <field name="retry_unreachable" type="boolean" default="1"/>
+            <field name="next_run" type="integer" default="0"/>
+            <field name="last_attempt" type="integer" default="0"/>
+            <field name="last_success" type="integer" default="0"/>
+            <field name="last_status" type="string" length="24" default="never"/>
+            <field name="last_message" type="text" notnull="false"/>
+            <field name="last_result_json" type="text" length="4294967295" notnull="false"/>
+            <field name="created" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="uniq_ucmp_configuration_sync_name" type="unique"><column name="source_site_id"/><column name="name"/></key>
+            <key name="idx_ucmp_configuration_sync_due" type="index"><column name="enabled"/><column name="next_run"/></key>
+        </table>
+        <table name="ucmp_configuration_sync_items">
+            <field name="id" type="integer" primaryKey="true" autoincrement="true"/>
+            <field name="job_key" type="string" length="128"/>
+            <field name="job_id" type="integer" default="0"/>
+            <field name="source_site_key" type="string" length="64"/>
+            <field name="source_site_name" type="string" length="80"/>
+            <field name="target_site_id" type="integer" default="0"/>
+            <field name="object_type" type="string" length="64"/>
+            <field name="object_key" type="string" length="160"/>
+            <field name="destination_id" type="integer" notnull="false"/>
+            <field name="source_revision" type="string" length="64" notnull="false"/>
+            <field name="destination_revision" type="string" length="64" notnull="false"/>
+            <field name="status" type="string" length="24" default="active"/>
+            <field name="soft_lock" type="boolean" default="1"/>
+            <field name="intended_json" type="text" length="4294967295" notnull="false"/>
+            <field name="missing_json" type="text" length="4294967295" notnull="false"/>
+            <field name="paused_at" type="integer" default="0"/>
+            <field name="paused_by" type="string" length="128" notnull="false"/>
+            <field name="pause_reason" type="text" notnull="false"/>
+            <field name="last_sync" type="integer" default="0"/>
+            <field name="updated" type="integer" default="0"/>
+            <key name="uniq_ucmp_configuration_sync_item" type="unique"><column name="job_key"/><column name="target_site_id"/><column name="object_type"/><column name="object_key"/></key>
+            <key name="idx_ucmp_configuration_sync_destination" type="index"><column name="target_site_id"/><column name="object_type"/><column name="destination_id"/><column name="status"/></key>
+        </table>
+        <table name="ucmp_apply_transactions">
+            <field name="transaction_id" type="string" length="40" primaryKey="true"/>
+            <field name="site_id" type="integer"/>
+            <field name="operation" type="string" length="32"/>
+            <field name="state" type="string" length="32"/>
+            <field name="plan_hash" type="string" length="64"/>
+            <field name="prior_generation" type="string" length="96" default=""/>
+            <field name="new_generation" type="string" length="96" default=""/>
+            <field name="manifest_json" type="text" length="4294967295"/>
+            <field name="details_json" type="text" length="4294967295"/>
+            <field name="started" type="integer" default="0"/>
+            <field name="finished" type="integer" notnull="false"/>
+            <field name="error" type="text" notnull="false"/>
+            <field name="actor" type="string" length="128" default=""/>
+            <key name="idx_ucmp_apply_transactions_site_started" type="index"><column name="site_id"/><column name="started"/></key>
+        </table>
+        <table name="ucmp_phone_builds">
+            <field name="phone_id" type="integer" primaryKey="true"/>
+            <field name="desired_hash" type="string" length="64"/>
+            <field name="applied_hash" type="string" length="64" default=""/>
+            <field name="manifest_json" type="text" length="4294967295"/>
+            <field name="generation_id" type="string" length="96" default=""/>
+            <field name="previous_generation_id" type="string" length="96" default=""/>
+            <field name="planned_at" type="integer" default="0"/>
+            <field name="applied_at" type="integer" notnull="false"/>
+        </table>
+        <table name="ucmp_operator_changes">
+            <field name="id" type="string" length="32" primaryKey="true"/>
+            <field name="site_id" type="integer"/>
+            <field name="kind" type="string" length="24"/>
+            <field name="state" type="string" length="24"/>
+            <field name="plan_hash" type="string" length="64"/>
+            <field name="plan_json" type="text" length="4294967295"/>
+            <field name="result_json" type="text" length="4294967295" notnull="false"/>
+            <field name="actor" type="string" length="128"/>
+            <field name="created" type="integer"/>
+            <field name="updated" type="integer"/>
+        </table>
+        <table name="ucmp_rpc_operations">
+            <field name="operation_id" type="string" length="32" primaryKey="true"/>
+            <field name="request_hash" type="string" length="64"/>
+            <field name="state" type="string" length="16"/>
+            <field name="response_enc" type="text" length="4294967295" notnull="false"/>
+            <field name="created" type="integer"/>
+            <field name="updated" type="integer"/>
+        </table>
+    </database>
+    <supported>
+        <version>17.0</version>
+    </supported>
+</module>

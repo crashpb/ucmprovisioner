@@ -1,0 +1,27 @@
+'use strict';
+const assert = require('node:assert/strict');
+const {summary} = require('../assets/js/phone-evidence.js');
+const text = summary({desired:{hash:'a'.repeat(64),planned_at:100},files:{hash:'b'.repeat(64),applied_at:50},pbx:false,notification:true,device:true,latest_attempt:{started:110},read_at:120});
+assert.match(text,/Desired: a{12}.*1970-01-01T00:01:40/);
+assert.match(text,/Published: b{12}.*1970-01-01T00:00:50/);
+assert.match(text,/PBX active: not confirmed/);
+assert.match(text,/Notification: confirmed/);
+assert.match(text,/Device applied: unknown/,'Even an unsupported device flag cannot imply physical success');
+assert.match(summary({}),/PBX active: unknown/);
+assert.match(summary({desired:{hash:'<script>secret</script>'}}),/Desired: unknown/);
+assert.match(summary({desired:{phone_label:'Resolved',accounts:[{account:2,label:'Second',display_name:'Full Person'}]},evidence:{}}),/Account 2: label Second · caller Full Person/);
+const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../assets/js/phone-evidence.js'),'utf8');
+let click,callbacks={},sent=[],output='',attached=true,site=7,phone=4,disabled=false;
+const cell={0:{},attr(name){return name==='data-site'?site:phone;},find(){return {text(value){output=value;}};}};
+const button={closest(){return cell;},prop(name,value){if(value===undefined)return disabled;disabled=value;return this;}};
+function $(target){return target===document?{on(event,selector,fn){click=fn;}}:button;}
+const document={};$.contains=()=>attached;
+const chain={done(fn){callbacks.done=fn;return this;},fail(fn){callbacks.fail=fn;return this;},always(fn){callbacks.always=fn;return this;}};
+vm.runInNewContext(source,{document,window:{jQuery:$,ucmpAjax(options){sent.push(options.data);return chain;}},Date,Number});
+click.call({});assert.equal(sent[0].site_id,7);assert.equal(sent[0].phone_id,4);assert.equal(sent[0].op,'explain');
+site=8;callbacks.done({result:{ok:true,site_id:7,phone_id:4}});assert.equal(output,'','Delayed owner response cannot populate a different site');
+site=7;callbacks.done({result:{ok:true,site_id:8,phone_id:4}});assert.match(output,/unavailable/,'Wrong owner result rejected');
+callbacks.always();assert.equal(disabled,false);
+click.call({});attached=false;output='';callbacks.fail();assert.equal(output,'','Detached inventory rows ignore delayed failures');
+console.log('Phone evidence stages, unknown device truth and asynchronous owner isolation passed');
