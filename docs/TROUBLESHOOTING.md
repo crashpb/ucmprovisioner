@@ -4,9 +4,9 @@ Start with the selected site and the operation timestamp. A local live result, a
 remote live result and a remote snapshot are different evidence. Do not modify files
 until the failing ownership boundary is known.
 
-These notes describe the 1.1.0rc6/schema 33 local candidate. A fixture passing on
-the development host is not evidence of a live FreePBX, MySQL, LDAP, proxy or handset
-outcome. Record installed version and actual observation separately.
+A fixture passing on the development host is not evidence of a live FreePBX,
+MySQL, LDAP, proxy or handset outcome. Record the installed version and actual
+observation separately; version-specific behavior is identified below.
 
 ## Collect a safe baseline
 
@@ -23,6 +23,50 @@ systemctl is-active asterisk httpd crond
 
 Do not paste database secrets, generated phone credentials, API keys, LDAP bind
 files or an unredacted configuration archive into a public report.
+
+## Phone save fails silently or the MAC remains unbound
+
+On a fresh non-Cisco installation, **Save only** or **Save & Rebuild** may appear
+to do nothing. The extension remains under **unbound extensions**, and adding a
+valid MAC does not persist it. Check the PJSIP listener before changing the MAC
+again or installing the Cisco patch.
+
+In **1.1.0rc33**, the inherited non-Cisco route is **PJSIP / UDP / 5160**. The
+module does not automatically discover the listening port. If the PBX listens on
+5060 instead, the save's endpoint validation rejects the mismatch and rolls back
+the phone assignment, including the MAC. The underlying error is:
+
+```text
+No FreePBX PJSIP UDP transport is listening on port 5160. Correct SIP Settings or this site/phone endpoint default first.
+```
+
+The page may not visibly display that error in rc33. This failure was reproduced
+with a synthetic 5060 listener; matching the port was also confirmed to resolve
+the reported save failure on a fresh Yealink-only installation.
+
+1. On the affected PBX, inspect the running listeners:
+
+   ```bash
+   asterisk -rx 'pjsip show transports'
+   ```
+
+2. Match the selected site's **Settings > non-Cisco endpoint defaults** to the
+   actual driver, transport and port. For a PJSIP UDP listener on 5060, use
+   **PJSIP / UDP / 5060**. Alternatively, set **Phone SIP port** to **5060** in the
+   individual phone editor. An explicit phone override takes precedence over the
+   site default, so remove or correct a stale 5160 override too.
+3. Confirm the phone editor's **Effective endpoint** matches that listener.
+   Keep the existing FreePBX listener; a provisioning default is not a reason to
+   move it or restart Asterisk.
+4. Enter the MAC and use **Save only**, then reopen the phone to verify the MAC
+   persisted. Proceed with **Save & Rebuild** and one-phone registration/call
+   checks. A successful save alone does not prove TFTP delivery or registration.
+
+Use your actual listener values, not 5060 unconditionally. If there is no matching
+listener or the save still fails with matching values, collect the exact error
+before changing other settings. Yealink/Grandstream provisioning does not require
+the USECALLMANAGER patch. See the
+[non-Cisco installation path](FRESH-INSTALL.md#5a-non-cisco-fleet-use-the-existing-freepbx-endpoints).
 
 ## A page says POST/token is missing or expired
 

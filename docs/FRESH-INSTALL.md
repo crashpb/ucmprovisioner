@@ -195,6 +195,23 @@ a valid listener and phone-compatible certificate/trust setup. For a first phone
 choose a route already known to work on this PBX. Do not change FreePBX's global
 listener just to match an example.
 
+**Check the port before saving your first phone.** Version 1.1.0rc33 defaults the
+non-Cisco PJSIP port to **5160**; it does not automatically discover the listener's
+port. If `pjsip show transports` shows UDP on **5060**, set the selected site's
+non-Cisco defaults in **Settings** to **PJSIP / UDP / 5060**, or set that phone's
+**Phone SIP port** override to **5060**. Check the phone editor's **Effective
+endpoint** and correct any explicit override that still selects 5160. Use the
+actual listener's protocol and port if they differ from this example.
+
+A mismatch can make **Save only** or **Save & Rebuild** appear to fail silently:
+the endpoint check rejects the save and rolls back the MAC assignment, leaving
+the extension in **unbound extensions**. A valid MAC alone cannot fix that failure.
+Matching the port resolved this symptom on a fresh Yealink-only installation;
+the USECALLMANAGER patch was not required. Save one phone and reopen it to confirm
+the MAC persists before rebuilding. See
+[phone-save troubleshooting](TROUBLESHOOTING.md#phone-save-fails-silently-or-the-mac-remains-unbound)
+for the exact error and verification steps.
+
 No Cisco firmware, locale, timezone JAR, service-URI configuration or BLF mesh is
 needed for this first non-Cisco phone. Proceed to section 6, provision one device,
 and verify registration and calls before adding optional features. A Cisco patch
